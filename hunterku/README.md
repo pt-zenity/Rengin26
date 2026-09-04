@@ -51,9 +51,10 @@ https://hunterku.xyz
 
 | File | Perubahan |
 |------|-----------|
-| `config/.env` | `DOMAIN_NAME=hunterku.xyz` |
+| `config/.env` | `DOMAIN_NAME=hunterku.xyz`, `TRUST_PROXY_HEADERS=True` |
 | `config/rengine.conf` | `server_name hunterku.xyz www.hunterku.xyz ...` |
 | `certs/rengine.pem` | SSL cert baru CN=`hunterku.xyz` (valid 10 tahun) |
+| `web/settings.py` | CSRF fix: `CSRF_TRUSTED_ORIGINS`, `CSRF_COOKIE_SECURE=False`, `CSRF_USE_SESSIONS=False` |
 
 ### Struktur File
 ```
@@ -64,10 +65,50 @@ hunterku/
 ├── config/
 │   ├── .env                       # Environment variables (domain, DB, dsb)
 │   └── rengine.conf               # Nginx proxy config
-└── certs/
-    ├── rengine.pem                # SSL certificate untuk hunterku.xyz
-    └── rengine_chain.pem          # Certificate chain (CA)
+├── certs/
+│   ├── rengine.pem                # SSL certificate untuk hunterku.xyz
+│   └── rengine_chain.pem          # Certificate chain (CA)
+└── web/
+    └── settings.py                # Django settings dengan CSRF fix (copy dari production)
 ```
+
+## Credentials Default
+
+| Parameter | Value |
+|-----------|-------|
+| URL | `https://hunterku.xyz` |
+| Username | `admin` |
+| Password | `AdminPass123!` |
+| Email | `admin@hunterku.xyz` |
+
+> **PENTING**: Ganti password setelah login pertama!
+
+## Perbaikan CSRF (403 Forbidden)
+
+### Masalah
+- Django menolak request POST dengan error `403 CSRF verification failed`
+- Penyebab: nginx reverse proxy meneruskan `X-Forwarded-Proto: https` namun Django tidak mempercayainya
+
+### Solusi
+1. **`.env`** — Tambahkan `TRUST_PROXY_HEADERS=True`
+2. **`settings.py`** — Update konfigurasi CSRF:
+   ```python
+   CSRF_TRUSTED_ORIGINS = [
+       f"https://{DOMAIN_NAME}",
+       f"http://{DOMAIN_NAME}",
+       "https://localhost", "http://localhost",
+       "https://127.0.0.1", "http://127.0.0.1",
+   ]
+   CSRF_COOKIE_SECURE = False    # Kompatibel dengan nginx proxy
+   CSRF_COOKIE_HTTPONLY = False  # Wajib untuk non-session CSRF
+   CSRF_USE_SESSIONS = False     # Cookie-based (lebih kompatibel)
+   ```
+3. **Force-recreate container** (bukan hanya restart):
+   ```bash
+   cd /opt/rengine-ng-celery-3.0.0
+   RENGINE_VERSION=$(cat web/reNgine/version.txt) \
+   docker compose -f docker/docker-compose.yml up -d --force-recreate web
+   ```
 
 ## Tools Reconnaissance Terinstal
 
